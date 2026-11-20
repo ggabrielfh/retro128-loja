@@ -48,6 +48,39 @@ jobs:
           echo "Publicando $REF_PUBLICADA (commit $COMMIT) — evento: $EVENTO"
           cat build-info.json
 
+      # Ação corretiva do incidente da release 2.0: impede publicar uma versão
+      # cujo catálogo cite capas que não existem na pasta configurada.
+      # O script fica aqui (e não num arquivo do repositório) porque o workflow
+      # sempre vem da main, enquanto o código publicado pode ser uma tag antiga.
+      - name: Validar a release (capas do catálogo existem)
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+
+          try:
+              config = json.load(open('config/app-config.json', encoding='utf-8'))
+              catalogo = json.load(open(config['catalogoUrl'], encoding='utf-8'))
+          except Exception as erro:
+              print(f"::error title=Release bloqueada::configuração ou catálogo inválido: {erro}")
+              sys.exit(1)
+
+          pasta = config['pastaCapas']
+          jogos = catalogo['jogos']
+          faltando = []
+          for jogo in jogos:
+              caminho = os.path.join(pasta, jogo['capa'])
+              existe = os.path.isfile(caminho)
+              print(f"{'OK   ' if existe else 'FALTA'} {jogo['id']} -> {caminho}")
+              if not existe:
+                  faltando.append(caminho)
+
+          if faltando:
+              print(f"::error title=Release bloqueada::{len(faltando)} de {len(jogos)} capas do catálogo não existem em '{pasta}'. Deploy interrompido.")
+              sys.exit(1)
+
+          print(f"Release aprovada: as {len(jogos)} capas do catálogo existem em '{pasta}'.")
+          PY
+
       - name: Configurar Pages
         uses: actions/configure-pages@v5
 
